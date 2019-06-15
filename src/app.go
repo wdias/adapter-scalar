@@ -9,17 +9,18 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/influxdata/influxdb1-client/v2"
+	client "github.com/influxdata/influxdb1-client/v2"
 	"github.com/kataras/iris"
 	"github.com/kataras/iris/context"
 )
 
 const (
-	influxdbURL     = "http://adapter-scalar-influxdb.default.svc.cluster.local:8086"
-	database        = "wdias"
-	username        = "wdias"
-	password        = "wdias123"
-	adapterMetadata = "http://adapter-metadata.default.svc.cluster.local"
+	influxdbURL      = "http://adapter-scalar-influxdb.default.svc.cluster.local:8086"
+	database         = "wdias"
+	username         = "wdias"
+	password         = "wdias123"
+	adapterMetadata  = "http://adapter-metadata.default.svc.cluster.local"
+	extensionHandler = "http://extension-handler.default.svc.cluster.local"
 )
 
 // Point : Data Point
@@ -37,6 +38,15 @@ type timeseries struct {
 	LocationID     string `json:"locationId"`
 	TimeseriesType string `json:"timeseriesType"`
 	TimeStepID     string `json:"timeStepId"`
+}
+
+func triggerExtensionHandler(timeseriesID string, q string) error {
+	response, err := netClient.Post(fmt.Sprint(extensionHandler, "/onchange/", timeseriesID, "?", q), "application/json", nil)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	return err
 }
 
 func getTimeseries(timeseriesID string, metadata *timeseries) error {
@@ -172,12 +182,16 @@ func main() {
 			}
 			if metadata.TimeseriesID != timeseriesID {
 				ctx.JSON(context.Map{"response": "Unable to find timeseries"})
-                return
+				return
 			}
 			if err := writePoints(influxClient, metadata, dataPoints); err != nil {
 				ctx.JSON(context.Map{"response": err.Error()})
 			}
-			fmt.Println("Stored timeseries:", metadata)
+			q := ctx.Request().URL.RawQuery
+			if err := triggerExtensionHandler(timeseriesID, q); err != nil {
+				ctx.JSON(context.Map{"response": err.Error()})
+			}
+			fmt.Println("Stored timeseries:", metadata, q)
 			ctx.JSON(context.Map{"response": "Stored data points", "timeseries": metadata})
 		}
 	})
@@ -189,31 +203,47 @@ func main() {
 		err := getTimeseries(timeseriesID, &metadata)
 		if err != nil {
 			ctx.JSON(context.Map{"response": err.Error()})
+			return
 		}
-		fmt.Println("Retrieve timeseries:", metadata)
-		q := fmt.Sprintf("SELECT time, value FROM %s LIMIT %d", metadata.TimeseriesType, 10)
+		start := ctx.URLParamDefault("start", "")
+		end := ctx.URLParamDefault("end", "")
+		limit := ctx.URLParamIntDefault("limit", 100)
+		fmt.Println("Retrieve timeseries:", metadata, start, end, limit)
+		w := ""
+		if start != "" && end != "" {
+			w = fmt.Sprintf("WHERE \"start\" >= '%s' AND \"end\" <= '%s'", start, end)
+		} else if start != "" {
+			w = fmt.Sprintf("WHERE \"start\" >= '%s'", start)
+		} else if end != "" {
+			w = fmt.Sprintf("WHERE \"end\" <= '%s'", end)
+		}
+		q := fmt.Sprintf("SELECT time, value FROM %s %s LIMIT %d", metadata.TimeseriesType, w, limit)
 		res, err := readPoints(influxClient, q)
 		if err != nil {
 			ctx.JSON(context.Map{"response": err.Error()})
+			return
 		}
-		var dataPoints []point
-		for _, row := range res[0].Series[0].Values {
-			// t, err := time.Parse(time.RFC3339, row[0].(string))
-			// if err != nil {
-			// 	fmt.Println("Error: Parsing back time:", err)
-			// }
-			t := row[0].(string)
-			val, err := row[1].(json.Number).Float64()
-			if err != nil {
-				fmt.Println("Error: Parsing value:", val, err)
+		var dataPoints []point = []point{}
+		if len(res) > 0 && len(res[0].Series) > 0 {
+			for _, row := range res[0].Series[0].Values {
+				// t, err := time.Parse(time.RFC3339, row[0].(string))
+				// if err != nil {
+				// 	fmt.Println("Error: Parsing back time:", err)
+				// }
+				t := row[0].(string)
+				val, err := row[1].(json.Number).Float64()
+				if err != nil {
+					fmt.Println("Error: Parsing value:", val, err)
+				}
+				p := point{
+					Time:  t,
+					Value: val,
+				}
+				dataPoints = append(dataPoints, p)
 			}
-			p := point{
-				Time:  t,
-				Value: val,
-			}
-			dataPoints = append(dataPoints, p)
 		}
 		ctx.JSON(dataPoints)
+		return
 	})
 
 	app.Get("/public/hc", func(ctx iris.Context) {
