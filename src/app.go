@@ -211,11 +211,11 @@ func main() {
 		fmt.Println("Retrieve timeseries:", metadata, start, end, limit)
 		w := ""
 		if start != "" && end != "" {
-			w = fmt.Sprintf("WHERE \"start\" >= '%s' AND \"end\" <= '%s'", start, end)
+			w = fmt.Sprintf("WHERE '%s' <= time AND time <= '%s'", start, end)
 		} else if start != "" {
-			w = fmt.Sprintf("WHERE \"start\" >= '%s'", start)
+			w = fmt.Sprintf("WHERE '%s' <= time", start)
 		} else if end != "" {
-			w = fmt.Sprintf("WHERE \"end\" <= '%s'", end)
+			w = fmt.Sprintf("WHERE time <= '%s'", end)
 		}
 		q := fmt.Sprintf("SELECT time, value FROM %s %s LIMIT %d", metadata.TimeseriesType, w, limit)
 		res, err := readPoints(influxClient, q)
