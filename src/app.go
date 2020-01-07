@@ -93,7 +93,7 @@ func writePoints(clnt client.Client, timeseries timeseries, dataPoints *[]point)
 
 	for _, point := range *dataPoints {
 		tags := map[string]string{
-			"timeseriesId":   timeseries.TimeseriesID,
+			// "timeseriesId":   timeseries.TimeseriesID,
 			"moduleId":       timeseries.ModuleID,
 			"valueType":      timeseries.ValueType,
 			"parameterId":    timeseries.ParameterID,
@@ -110,7 +110,7 @@ func writePoints(clnt client.Client, timeseries timeseries, dataPoints *[]point)
 			continue
 		}
 		pt, err := client.NewPoint(
-			timeseries.TimeseriesType, // measurement
+			timeseries.TimeseriesID, // measurement
 			tags,
 			fields,
 			t,
@@ -199,16 +199,16 @@ func main() {
 	app.Get("/timeseries/{timeseriesID:string}", func(ctx iris.Context) {
 		timeseriesID := ctx.Params().Get("timeseriesID")
 		fmt.Println("timeseriesID:", timeseriesID)
-		var metadata timeseries
-		err := getTimeseries(timeseriesID, &metadata)
-		if err != nil {
-			ctx.JSON(context.Map{"response": err.Error()})
-			return
-		}
+		// var metadata timeseries
+		// err := getTimeseries(timeseriesID, &metadata)
+		// if err != nil {
+		// 	ctx.JSON(context.Map{"response": err.Error()})
+		// 	return
+		// }
 		start := ctx.URLParamDefault("start", "")
 		end := ctx.URLParamDefault("end", "")
 		limit := ctx.URLParamIntDefault("limit", 100)
-		fmt.Println("Retrieve timeseries:", metadata, start, end, limit)
+		fmt.Println("Retrieve timeseries:", start, end, limit)
 		w := ""
 		if start != "" && end != "" {
 			w = fmt.Sprintf("WHERE '%s' <= time AND time <= '%s'", start, end)
@@ -217,7 +217,7 @@ func main() {
 		} else if end != "" {
 			w = fmt.Sprintf("WHERE time <= '%s'", end)
 		}
-		q := fmt.Sprintf("SELECT time, value FROM %s %s LIMIT %d", metadata.TimeseriesType, w, limit)
+		q := fmt.Sprintf("SELECT time, value FROM \"%s\" %s LIMIT %d", timeseriesID, w, limit)
 		res, err := readPoints(influxClient, q)
 		if err != nil {
 			ctx.JSON(context.Map{"response": err.Error()})
