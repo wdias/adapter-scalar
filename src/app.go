@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	client "github.com/influxdata/influxdb1-client/v2"
+	"github.com/influxdata/influxdb1-client/v2"
 	"github.com/kataras/iris"
 	"github.com/kataras/iris/context"
 )
